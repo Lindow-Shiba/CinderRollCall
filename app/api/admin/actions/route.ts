@@ -4,19 +4,6 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Single endpoint for all admin mutations. Dispatches on the `action` form field.
- * Using plain form POSTs (no JSON) so the admin page can work without JS.
- *
- * Actions:
- *   platoon.create     name, ping_role_id
- *   platoon.update     id, name, ping_role_id
- *   platoon.delete     id
- *   squad.create       platoon_id, name, kind, sort_order
- *   squad.delete       id
- *   webhook.create     platoon_id, label, url
- *   webhook.delete     id
- */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session.admin) {
@@ -26,8 +13,7 @@ export async function POST(req: NextRequest) {
   const form = await req.formData();
   const action = String(form.get("action") ?? "");
   const sb = supabaseAdmin();
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const backTo = `${siteUrl}/admin`;
+  const backTo = `${req.nextUrl.origin}/admin`;
 
   const str = (k: string) => {
     const v = form.get(k);
