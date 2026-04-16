@@ -4,14 +4,6 @@ import { postRollCall } from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Post a roll call to Discord.
- *
- * Security notes:
- * - The webhook URL is NEVER sent from the client — we look it up server-side
- *   from Supabase using the webhookId. The client only knows the ID.
- * - We trust nothing from the body except as form fields; all IDs are re-checked.
- */
 export async function POST(req: NextRequest) {
   let body: {
     platoonId?: number;
@@ -41,7 +33,6 @@ export async function POST(req: NextRequest) {
 
   const sb = supabaseAdmin();
 
-  // Look up webhook + platoon. Check they actually belong together.
   const [whRes, pRes, sqRes] = await Promise.all([
     sb.from("webhooks").select("*").eq("id", webhookId).single(),
     sb.from("platoons").select("*").eq("id", platoonId).single(),
@@ -63,11 +54,30 @@ export async function POST(req: NextRequest) {
   const squads = (sqRes.data as Squad[]) ?? [];
   const squadLines = squads.map((s) => `• ${s.name}  _(${s.kind})_`);
 
-  // Validate / sanitise the ping role ID — must be a numeric Discord snowflake.
   let pingRoleId = pingRoleOverride || platoon.ping_role_id || null;
   if (pingRoleId !== null && !/^\d{5,25}$/.test(String(pingRoleId))) {
     return NextResponse.json({ error: "Ping role must be a numeric Discord ID" }, { status: 400 });
   }
+
+  // Save roll call to DB to get an ID for the RSVP page
+  const { data: rollCallData, error: rollCallError } = await sb
+    .from("roll_calls")
+    .insert({
+      platoon_id: platoonId,
+      title,
+      description: description?.trim() || null,
+      op_time_unix: opTimeUnix,
+    })
+    .select("id")
+    .single();
+
+  if (rollCallError || !rollCallData) {
+    console.error("Failed to save roll call:", rollCallError);
+    return NextResponse.json({ error: "Failed to save roll call" }, { status: 500 });
+  }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const rsvpUrl = `${siteUrl}/rsvp/${rollCallData.id}`;
 
   try {
     await postRollCall(webhook.url, {
@@ -76,6 +86,7 @@ export async function POST(req: NextRequest) {
       opTimeUnix,
       pingRoleId,
       squadLines,
+      rsvpUrl,
     });
   } catch (err) {
     console.error("postRollCall failed:", err);

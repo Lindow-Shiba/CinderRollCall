@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
         const name = str("name");
         const kind = str("kind");
         const sort_order = num("sort_order") ?? 0;
-        if (!platoon_id || !name || !["squad", "section", "reserve"].includes(kind)) {
+        if (!platoon_id || !name || !["squad", "team", "reserve"].includes(kind)) {
           return NextResponse.redirect(`${backTo}?err=invalid-squad`);
         }
         await sb.from("squads").insert({ platoon_id, name, kind, sort_order });

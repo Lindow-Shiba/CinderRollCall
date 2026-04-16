@@ -176,7 +176,7 @@ export default async function AdminPage({
                 <label>Kind</label>
                 <select name="kind" defaultValue="squad">
                   <option value="squad">squad</option>
-                  <option value="section">section</option>
+                  <option value="team">team</option>
                   <option value="reserve">reserve</option>
                 </select>
               </div>
