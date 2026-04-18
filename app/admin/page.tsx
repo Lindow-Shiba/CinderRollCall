@@ -1,8 +1,9 @@
 import { getSession } from "@/lib/session";
-import { supabaseAdmin, type Platoon, type Squad, type Webhook } from "@/lib/supabase";
+import { supabaseAdmin, type Platoon, type Squad } from "@/lib/supabase";
 import DiscordSetup from "@/components/DiscordSetup";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function AdminPage({
   searchParams,
@@ -16,7 +17,7 @@ export default async function AdminPage({
       <div className="max-w-md mx-auto mt-16">
         <h1 className="text-2xl font-semibold mb-2 text-center">Admin access</h1>
         <p className="text-muted text-sm mb-6 text-center">
-          Enter the admin password to manage platoons, squads, and webhooks.
+          Enter the admin password to manage platoons and squads.
         </p>
         <form
           method="POST"
@@ -41,17 +42,14 @@ export default async function AdminPage({
     );
   }
 
-  // Authed — load data
   const sb = supabaseAdmin();
-  const [pRes, sRes, wRes] = await Promise.all([
+  const [pRes, sRes] = await Promise.all([
     sb.from("platoons").select("*").order("name"),
     sb.from("squads").select("*").order("sort_order"),
-    sb.from("webhooks").select("*").order("label"),
   ]);
 
   const platoons = (pRes.data as Platoon[]) ?? [];
   const squads = (sRes.data as Squad[]) ?? [];
-  const webhooks = (wRes.data as Webhook[]) ?? [];
 
   return (
     <div>
@@ -59,7 +57,7 @@ export default async function AdminPage({
         <div>
           <h1 className="text-2xl font-semibold">Admin</h1>
           <p className="text-muted text-sm mt-1">
-            Manage platoons, squads, and Discord webhooks.
+            Manage platoons, squads, and Discord settings.
           </p>
         </div>
         <form method="POST" action="/api/admin/logout">
@@ -75,25 +73,21 @@ export default async function AdminPage({
         </div>
       )}
 
-
       {/* ---------- Discord setup ---------- */}
       <section className="bg-panel border border-border rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-1">Discord Setup</h2>
-        <p className="text-muted text-sm mb-4">Choose which server, channel and roles the bot uses for roll calls.</p>
+        <p className="text-muted text-sm mb-4">Configure the default server for the bot. Channel and ping roles are chosen per roll call on the Post page.</p>
         <DiscordSetup />
       </section>
+
       {/* ---------- Create platoon ---------- */}
       <section className="bg-panel border border-border rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">New platoon</h2>
-        <form method="POST" action="/api/admin/actions" className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+        <form method="POST" action="/api/admin/actions" className="flex gap-3 items-end">
           <input type="hidden" name="action" value="platoon.create" />
-          <div>
+          <div className="flex-1">
             <label>Name</label>
-            <input type="text" name="name" placeholder="Cinder" required />
-          </div>
-          <div>
-            <label>Default ping role ID</label>
-            <input type="text" name="ping_role_id" placeholder="Discord role ID (optional)" />
+            <input type="text" name="name" placeholder="Cinder Platoon" required />
           </div>
           <button
             type="submit"
@@ -107,7 +101,6 @@ export default async function AdminPage({
       {/* ---------- Existing platoons ---------- */}
       {platoons.map((p) => {
         const pSquads = squads.filter((s) => s.platoon_id === p.id);
-        const pWebhooks = webhooks.filter((w) => w.platoon_id === p.id);
         return (
           <section key={p.id} className="bg-panel border border-border rounded-lg p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -121,21 +114,17 @@ export default async function AdminPage({
               </form>
             </div>
 
-            {/* Edit name / role */}
+            {/* Edit name */}
             <form
               method="POST"
               action="/api/admin/actions"
-              className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end mb-6"
+              className="flex gap-3 items-end mb-6"
             >
               <input type="hidden" name="action" value="platoon.update" />
               <input type="hidden" name="id" value={p.id} />
-              <div>
+              <div className="flex-1">
                 <label>Name</label>
                 <input type="text" name="name" defaultValue={p.name} required />
-              </div>
-              <div>
-                <label>Default ping role ID</label>
-                <input type="text" name="ping_role_id" defaultValue={p.ping_role_id ?? ""} />
               </div>
               <button
                 type="submit"
@@ -147,7 +136,7 @@ export default async function AdminPage({
 
             {/* Squads */}
             <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
-              Squads
+              Squads / Teams / Reserves
             </h3>
             {pSquads.length > 0 && (
               <ul className="mb-4 space-y-1">
@@ -172,20 +161,20 @@ export default async function AdminPage({
             <form
               method="POST"
               action="/api/admin/actions"
-              className="grid grid-cols-[1fr_140px_100px_auto] gap-3 items-end mb-6"
+              className="grid grid-cols-[1fr_140px_100px_auto] gap-3 items-end"
             >
               <input type="hidden" name="action" value="squad.create" />
               <input type="hidden" name="platoon_id" value={p.id} />
               <div>
-                <label>Squad name</label>
+                <label>Name</label>
                 <input type="text" name="name" placeholder="Cinder 1-1" required />
               </div>
               <div>
                 <label>Kind</label>
                 <select name="kind" defaultValue="squad">
-                  <option value="squad">squad</option>
-                  <option value="team">team</option>
-                  <option value="reserve">reserve</option>
+                  <option value="squad">Squad</option>
+                  <option value="team">Team</option>
+                  <option value="reserve">Reserve</option>
                 </select>
               </div>
               <div>
@@ -196,58 +185,7 @@ export default async function AdminPage({
                 type="submit"
                 className="bg-border hover:bg-border/80 text-text font-medium px-4 py-2 rounded-md"
               >
-                Add squad
-              </button>
-            </form>
-
-            {/* Webhooks */}
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
-              Webhooks
-            </h3>
-            {pWebhooks.length > 0 && (
-              <ul className="mb-4 space-y-1">
-                {pWebhooks.map((w) => (
-                  <li key={w.id} className="flex items-center gap-2 text-sm">
-                    <span className="flex-1">{w.label}</span>
-                    <span className="text-muted text-xs font-mono truncate max-w-[320px]">
-                      {w.url.replace(/\/[^/]+$/, "/…")}
-                    </span>
-                    <form method="POST" action="/api/admin/actions">
-                      <input type="hidden" name="action" value="webhook.delete" />
-                      <input type="hidden" name="id" value={w.id} />
-                      <button type="submit" className="text-muted hover:text-accent text-xs">
-                        remove
-                      </button>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form
-              method="POST"
-              action="/api/admin/actions"
-              className="grid grid-cols-[200px_1fr_auto] gap-3 items-end"
-            >
-              <input type="hidden" name="action" value="webhook.create" />
-              <input type="hidden" name="platoon_id" value={p.id} />
-              <div>
-                <label>Label</label>
-                <input type="text" name="label" placeholder="#cinder-rollcall" required />
-              </div>
-              <div>
-                <label>Webhook URL</label>
-                <input
-                  type="text"
-                  name="url"
-                  placeholder="https://discord.com/api/webhooks/…"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                className="bg-border hover:bg-border/80 text-text font-medium px-4 py-2 rounded-md"
-              >
-                Add webhook
+                Save
               </button>
             </form>
           </section>

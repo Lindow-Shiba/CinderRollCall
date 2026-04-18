@@ -2,6 +2,7 @@ import { supabaseAdmin, type Platoon, type Squad } from "@/lib/supabase";
 import { RollCallForm } from "@/components/RollCallForm";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function HomePage() {
   const sb = supabaseAdmin();
