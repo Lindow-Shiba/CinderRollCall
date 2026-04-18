@@ -16,6 +16,12 @@ async function botRequest(path: string, method: string, body?: unknown) {
   return res.status === 204 ? null : res.json();
 }
 
+function attendanceEmoji(attendance: string) {
+  if (attendance === "yes") return "👍";
+  if (attendance === "maybe") return "〰️";
+  return "👎";
+}
+
 function buildRollCallMessage(opts: {
   title: string;
   description?: string | null;
@@ -27,24 +33,17 @@ function buildRollCallMessage(opts: {
 }) {
   const { title, description, opTimeUnix, rollCallId, squads, rsvps = [], pingRoleIds } = opts;
 
-  // Build fields — one per squad, plus an Absent field
+  // One field per squad showing members with emoji
   const squadFields = squads.map(s => {
     const members = rsvps
-      .filter(r => r.squad_id === s.id && r.attendance !== "no")
-      .map(r => r.display_name);
+      .filter(r => r.squad_id === s.id)
+      .map(r => `${attendanceEmoji(r.attendance)} ${r.display_name}`);
     return {
       name: `${s.name} (${members.length})`,
       value: members.length > 0 ? members.join("\n") : "—",
       inline: true,
     };
   });
-
-  const absentees = rsvps.filter(r => r.attendance === "no").map(r => r.display_name);
-  const absentField = {
-    name: `Absent (${absentees.length})`,
-    value: absentees.length > 0 ? absentees.join("\n") : "—",
-    inline: true,
-  };
 
   const embed = {
     title,
@@ -57,12 +56,11 @@ function buildRollCallMessage(opts: {
         inline: false,
       },
       ...squadFields,
-      absentField,
     ],
     footer: { text: `Roll Call ID: ${rollCallId}` },
   };
 
-  // Squad select options
+  // Squad dropdown (no absent option)
   const squadOptions = squads.map(s => ({
     label: s.name,
     description: s.kind.charAt(0).toUpperCase() + s.kind.slice(1),
@@ -76,14 +74,19 @@ function buildRollCallMessage(opts: {
         {
           type: 3,
           custom_id: `squad_select:${rollCallId}`,
-          placeholder: "Select your squad / team / reserve",
-          options: [
-            ...squadOptions.slice(0, 24),
-            { label: "Mark as Absent", description: "I cannot attend", value: "absent", emoji: { name: "❌" } },
-          ],
+          placeholder: "1. Select your squad / team / reserve",
+          options: squadOptions.slice(0, 25),
           min_values: 1,
           max_values: 1,
         },
+      ],
+    },
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 3, label: "👍 Yes", custom_id: `attend:yes:${rollCallId}` },
+        { type: 2, style: 2, label: "〰️ Maybe", custom_id: `attend:maybe:${rollCallId}` },
+        { type: 2, style: 4, label: "👎 No", custom_id: `attend:no:${rollCallId}` },
       ],
     },
   ];
@@ -119,7 +122,6 @@ export async function POST(req: NextRequest) {
   ]);
 
   if (pRes.error || !pRes.data) return NextResponse.json({ error: "Platoon not found" }, { status: 404 });
-
   const squads = (sqRes.data as Squad[]) ?? [];
 
   const { data: rollCallData, error: rcErr } = await sb
