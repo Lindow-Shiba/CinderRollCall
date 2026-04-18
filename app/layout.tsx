@@ -14,7 +14,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header style={{ background: "#0d1117", borderBottom: "1px solid #1e2938" }}>
             <div className="max-w-5xl mx-auto px-6 flex items-center justify-between" style={{ height: "56px" }}>
               <a href="/" className="site-logo">
-                <div className="logo-hex" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/9_logo.png" alt="9th AC" style={{ width: "36px", height: "36px", objectFit: "contain" }} />
                 <div>
                   <div className="logo-title">9TH ASSAULT CORPS</div>
                   <div className="logo-sub">ROLL CALL SYSTEM</div>

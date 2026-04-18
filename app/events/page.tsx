@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase";
-import { getSession } from "@/lib/session";
-import { redirect } from "next/navigation";
+import { DeleteEventButton } from "@/components/DeleteEventButton";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,12 +7,8 @@ export const revalidate = 0;
 function formatNY(unix: number): string {
   return new Date(unix * 1000).toLocaleString("en-US", {
     timeZone: "America/New_York",
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    weekday: "short", month: "short", day: "numeric",
+    year: "numeric", hour: "2-digit", minute: "2-digit",
     timeZoneName: "short",
   });
 }
@@ -28,16 +23,12 @@ const card: React.CSSProperties = {
 
 export default async function EventsPage() {
   const sb = supabaseAdmin();
-
   const { data: rollCalls } = await sb
     .from("roll_calls")
     .select("*, platoons(name)")
     .order("op_time_unix", { ascending: false });
 
-  // Get RSVP counts per roll call
-  const { data: rsvpCounts } = await sb
-    .from("rsvps")
-    .select("roll_call_id");
+  const { data: rsvpCounts } = await sb.from("rsvps").select("roll_call_id");
 
   const countMap: Record<string, number> = {};
   (rsvpCounts ?? []).forEach((r: any) => {
@@ -46,9 +37,8 @@ export default async function EventsPage() {
 
   const events = rollCalls ?? [];
   const now = Math.floor(Date.now() / 1000);
-
-  const upcoming = events.filter(e => e.op_time_unix >= now);
-  const past = events.filter(e => e.op_time_unix < now);
+  const upcoming = events.filter((e: any) => e.op_time_unix >= now);
+  const past = events.filter((e: any) => e.op_time_unix < now);
 
   return (
     <div>
@@ -58,7 +48,7 @@ export default async function EventsPage() {
         </div>
         <h1 style={{ fontSize: "22px", fontWeight: 700, margin: 0 }}>Current Events</h1>
         <p style={{ fontSize: "13px", color: "var(--muted)", marginTop: "4px" }}>
-          All roll calls — upcoming and past. Admins can edit or delete.
+          All roll calls — upcoming and past.
         </p>
       </div>
 
@@ -110,7 +100,7 @@ function EventCard({ event, count, past }: { event: any; count: number; past?: b
             )}
           </div>
           <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "6px" }}>
-            {(event as any).platoons?.name ?? "Unknown Platoon"}
+            {event.platoons?.name ?? "Unknown Platoon"}
           </div>
           {event.description && (
             <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "8px", whiteSpace: "pre-wrap" }}>
@@ -131,28 +121,12 @@ function EventCard({ event, count, past }: { event: any; count: number; past?: b
               fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em",
               color: "var(--text)", background: "#1e2938",
               border: "none", borderRadius: "4px", padding: "6px 12px",
-              textDecoration: "none", cursor: "pointer",
+              textDecoration: "none",
             }}
           >
             EDIT
           </a>
-          <form method="POST" action="/api/events/delete">
-            <input type="hidden" name="id" value={event.id} />
-            <button
-              type="submit"
-              style={{
-                fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em",
-                color: "var(--accent)", background: "rgba(192,57,43,0.1)",
-                border: "1px solid rgba(192,57,43,0.3)", borderRadius: "4px",
-                padding: "6px 12px", cursor: "pointer",
-              }}
-              onClick={(e) => {
-                if (!confirm("Delete this roll call and all its RSVPs?")) e.preventDefault();
-              }}
-            >
-              DELETE
-            </button>
-          </form>
+          <DeleteEventButton id={event.id} />
         </div>
       </div>
     </div>
