@@ -49,21 +49,9 @@ function buildRollCallMessage(opts: {
         value: squadLines,
         inline: false,
       },
-      {
-        name: "👍 Yes (0)",
-        value: "—",
-        inline: true,
-      },
-      {
-        name: "〰️ Maybe (0)",
-        value: "—",
-        inline: true,
-      },
-      {
-        name: "👎 No (0)",
-        value: "—",
-        inline: true,
-      },
+      { name: "👍 Yes (0)", value: "—", inline: true },
+      { name: "〰️ Maybe (0)", value: "—", inline: true },
+      { name: "👎 No (0)", value: "—", inline: true },
     ],
     footer: { text: `Roll Call ID: ${rollCallId}` },
   };
@@ -91,34 +79,18 @@ function buildRollCallMessage(opts: {
     {
       type: 1,
       components: [
-        {
-          type: 2,
-          style: 3,
-          label: "✅ Yes",
-          custom_id: `attend:yes:${rollCallId}`,
-        },
-        {
-          type: 2,
-          style: 2,
-          label: "〰️ Maybe",
-          custom_id: `attend:maybe:${rollCallId}`,
-        },
-        {
-          type: 2,
-          style: 4,
-          label: "❌ No",
-          custom_id: `attend:no:${rollCallId}`,
-        },
+        { type: 2, style: 3, label: "✅ Yes", custom_id: `attend:yes:${rollCallId}` },
+        { type: 2, style: 2, label: "〰️ Maybe", custom_id: `attend:maybe:${rollCallId}` },
+        { type: 2, style: 4, label: "❌ No", custom_id: `attend:no:${rollCallId}` },
       ],
     },
   ];
 
-  // Build ping content
   const pingContent = pingRoleIds && pingRoleIds.length > 0
-    ? pingRoleIds.map(id => `<@&${id}>`).join(" ") + "\n"
-    : "";
+    ? pingRoleIds.map(id => `<@&${id}>`).join(" ")
+    : undefined;
 
-  return { content: pingContent || undefined, embeds: [embed], components };
+  return { content: pingContent, embeds: [embed], components };
 }
 
 export async function POST(req: NextRequest) {
@@ -127,6 +99,8 @@ export async function POST(req: NextRequest) {
     title?: string;
     description?: string;
     opTimeUnix?: number;
+    channelId?: string;
+    pingRoleIds?: string[];
   };
   try {
     body = await req.json();
@@ -134,21 +108,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { platoonId, title, description, opTimeUnix } = body;
+  const { platoonId, title, description, opTimeUnix, channelId, pingRoleIds } = body;
 
-  if (!platoonId || !title || !opTimeUnix) {
+  if (!platoonId || !title || !opTimeUnix || !channelId) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
   const sb = supabaseAdmin();
 
-  // Get discord config
-  const { data: config } = await sb.from("discord_config").select("*").eq("id", 1).single();
-  if (!config?.channel_id) {
-    return NextResponse.json({ error: "Discord not configured. Set up Discord in Admin first." }, { status: 400 });
-  }
-
-  // Get platoon + squads
   const [pRes, sqRes] = await Promise.all([
     sb.from("platoons").select("*").eq("id", platoonId).single(),
     sb.from("squads").select("*").eq("platoon_id", platoonId).order("sort_order"),
@@ -160,7 +127,6 @@ export async function POST(req: NextRequest) {
 
   const squads = (sqRes.data as Squad[]) ?? [];
 
-  // Save roll call to DB
   const { data: rollCallData, error: rollCallError } = await sb
     .from("roll_calls")
     .insert({
@@ -176,25 +142,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to save roll call" }, { status: 500 });
   }
 
-  const pingRoleIds = config.ping_role_id
-    ? config.ping_role_id.split(",").filter(Boolean)
-    : [];
-
   const message = buildRollCallMessage({
     title,
     description,
     opTimeUnix,
     rollCallId: rollCallData.id,
     squads,
-    pingRoleIds,
+    pingRoleIds: pingRoleIds ?? [],
   });
 
   try {
-    const posted = await botRequest(`/channels/${config.channel_id}/messages`, "POST", message);
-
-    // Save message ID so we can edit it later
+    const posted = await botRequest(`/channels/${channelId}/messages`, "POST", message);
     await sb.from("roll_calls").update({
-      discord_channel_id: config.channel_id,
+      discord_channel_id: channelId,
       discord_message_id: posted.id,
     }).eq("id", rollCallData.id);
   } catch (err) {

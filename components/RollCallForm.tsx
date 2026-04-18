@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Platoon, Squad } from "@/lib/supabase";
 
 type Props = {
@@ -8,14 +8,13 @@ type Props = {
   squads: Squad[];
 };
 
-/**
- * Convert a datetime-local value (treated as EST/EDT) to a UNIX timestamp.
- * EST = UTC-5, EDT = UTC-4. We use UTC-5 (EST) always as requested.
- */
+const EDGE = "https://wvcuddamlhtigvyuqzay.supabase.co/functions/v1/discord-setup";
+
+type Channel = { id: string; name: string };
+type Role = { id: string; name: string };
+
 function estToUnix(local: string): number | null {
   if (!local) return null;
-  // datetime-local gives "YYYY-MM-DDTHH:mm"
-  // Treat as EST (UTC-5) by appending offset
   const ms = new Date(local + ":00-05:00").getTime();
   if (Number.isNaN(ms)) return null;
   return Math.floor(ms / 1000);
@@ -44,14 +43,59 @@ export function RollCallForm({ platoons, squads }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // Discord channel + role selection
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [selectedChannel, setSelectedChannel] = useState<string>("");
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [discordLoading, setDiscordLoading] = useState(true);
+
   const platoonSquads = squads.filter((s) => s.platoon_id === platoonId);
   const opUnix = estToUnix(opTime);
+
+  useEffect(() => {
+    async function loadDiscord() {
+      setDiscordLoading(true);
+      try {
+        const config = await fetch(`${EDGE}?action=config`).then(r => r.json());
+        if (!config?.guild_id) return;
+
+        const [chRes, rolesRes] = await Promise.all([
+          fetch(`${EDGE}?action=channels&guildId=${config.guild_id}`),
+          fetch(`${EDGE}?action=roles&guildId=${config.guild_id}`),
+        ]);
+        const chList: Channel[] = await chRes.json();
+        const roleList: Role[] = await rolesRes.json();
+        setChannels(chList);
+        setRoles(roleList);
+
+        // Pre-select saved defaults
+        if (config.channel_id) setSelectedChannel(config.channel_id);
+        if (config.ping_role_id) setSelectedRoles(config.ping_role_id.split(",").filter(Boolean));
+      } catch (e) {
+        console.error("Failed to load Discord config", e);
+      } finally {
+        setDiscordLoading(false);
+      }
+    }
+    loadDiscord();
+  }, []);
+
+  function toggleRole(roleId: string) {
+    setSelectedRoles(prev =>
+      prev.includes(roleId) ? prev.filter(r => r !== roleId) : [...prev, roleId]
+    );
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setResult(null);
     if (!opUnix) {
       setResult({ ok: false, msg: "Pick an operation date/time (EST)." });
+      return;
+    }
+    if (!selectedChannel) {
+      setResult({ ok: false, msg: "Please select a Discord channel." });
       return;
     }
     setSubmitting(true);
@@ -64,6 +108,8 @@ export function RollCallForm({ platoons, squads }: Props) {
           title,
           description,
           opTimeUnix: opUnix,
+          channelId: selectedChannel,
+          pingRoleIds: selectedRoles,
         }),
       });
       const data = await res.json();
@@ -121,11 +167,46 @@ export function RollCallForm({ platoons, squads }: Props) {
             required
           />
           {opUnix && (
-            <p className="text-xs text-muted mt-1">
-              🕐 {unixToEstPreview(opUnix)}
-            </p>
+            <p className="text-xs text-muted mt-1">🕐 {unixToEstPreview(opUnix)}</p>
           )}
         </div>
+
+        {/* Discord channel */}
+        <div>
+          <label>Post to channel</label>
+          {discordLoading ? (
+            <p className="text-muted text-sm">Loading channels…</p>
+          ) : channels.length === 0 ? (
+            <p className="text-accent text-sm">No Discord server configured. Set up in <a href="/admin" className="underline">Admin</a>.</p>
+          ) : (
+            <select value={selectedChannel} onChange={e => setSelectedChannel(e.target.value)} required>
+              <option value="">— Select a channel —</option>
+              {channels.map(c => (
+                <option key={c.id} value={c.id}>#{c.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Ping roles */}
+        {roles.length > 0 && (
+          <div>
+            <label className="mb-2 block">Ping roles <span className="text-muted text-xs">(optional)</span></label>
+            <div className="border border-border rounded-md max-h-40 overflow-y-auto p-3 space-y-1">
+              {roles.map(r => (
+                <label key={r.id} className="flex items-center gap-2 text-sm cursor-pointer hover:text-text">
+                  <input
+                    type="checkbox"
+                    checked={selectedRoles.includes(r.id)}
+                    onChange={() => toggleRole(r.id)}
+                    className="accent-red-500"
+                  />
+                  {r.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-3">
           <button
