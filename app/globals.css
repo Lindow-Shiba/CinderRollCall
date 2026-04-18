@@ -3,60 +3,92 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  --bg: #080b10;
+  --bg2: #0d1117;
+  --panel: #0d1117;
+  --border: #1e2938;
+  --text: #e6edf3;
+  --muted: #6e7f96;
+  --accent: #c0392b;
+  --accentHover: #e74c3c;
+  --accent2: #1a2535;
 }
 
-html, body {
-  background: #0a0a0b;
-  color: #e7e7ea;
-  min-height: 100%;
-}
+* { box-sizing: border-box; }
 
 body {
-  font-feature-settings: "ss01", "cv11";
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
 }
 
-/* subtle grid background */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(circle at 20% -10%, rgba(200, 55, 45, 0.08), transparent 40%),
-    radial-gradient(circle at 100% 110%, rgba(200, 55, 45, 0.05), transparent 50%);
-  z-index: -1;
-}
+/* Typography */
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
 
-/* form field defaults */
-input[type="text"],
-input[type="password"],
-input[type="datetime-local"],
-input[type="number"],
-textarea,
-select {
-  background: #0f0f14;
-  border: 1px solid #262630;
-  color: #e7e7ea;
-  border-radius: 6px;
-  padding: 0.55rem 0.75rem;
-  width: 100%;
-  font-size: 0.95rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-input:focus,
-textarea:focus,
-select:focus {
-  outline: none;
-  border-color: #c8372d;
-  box-shadow: 0 0 0 3px rgba(200, 55, 45, 0.15);
-}
-
+/* Form elements */
 label {
   display: block;
-  font-size: 0.85rem;
-  color: #a0a0ac;
-  margin-bottom: 0.35rem;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
 }
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="datetime-local"],
+textarea,
+select {
+  width: 100%;
+  background: #0a0f17;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="datetime-local"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236e7f96' stroke-width='2'%3E%3Cpolyline points='6,9 12,15 18,9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 32px;
+}
+
+textarea { resize: vertical; }
+
+/* Utilities */
+.text-muted { color: var(--muted); }
+.text-text { color: var(--text); }
+.text-accent { color: var(--accent); }
+.bg-panel { background: var(--panel); }
+.bg-accent { background: var(--accent); }
+.bg-accentHover { background: var(--accentHover); }
+.bg-border { background: var(--border); }
+.border-border { border-color: var(--border); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
