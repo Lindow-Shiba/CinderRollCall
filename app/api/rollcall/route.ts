@@ -1,8 +1,125 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, type Webhook, type Squad } from "@/lib/supabase";
-import { postRollCall } from "@/lib/discord";
+import { supabaseAdmin, type Squad } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
+
+const DISCORD_API = "https://discord.com/api/v10";
+
+async function botRequest(path: string, method: string, body?: unknown) {
+  const token = process.env.DISCORD_BOT_TOKEN!;
+  const res = await fetch(`${DISCORD_API}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bot ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Discord API error ${res.status}: ${text}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function buildRollCallMessage(opts: {
+  title: string;
+  description?: string | null;
+  opTimeUnix: number;
+  rollCallId: string;
+  squads: Squad[];
+  pingRoleIds?: string[];
+}) {
+  const { title, description, opTimeUnix, rollCallId, squads, pingRoleIds } = opts;
+
+  const squadLines = squads.map(s => `• ${s.name} *(${s.kind})*`).join("\n") || "—";
+
+  const embed = {
+    title,
+    description: description ?? undefined,
+    color: 0xE84141,
+    fields: [
+      {
+        name: "🗓️ Op Time (EST)",
+        value: `<t:${opTimeUnix}:F> (<t:${opTimeUnix}:R>)`,
+        inline: false,
+      },
+      {
+        name: "Squads",
+        value: squadLines,
+        inline: false,
+      },
+      {
+        name: "👍 Yes (0)",
+        value: "—",
+        inline: true,
+      },
+      {
+        name: "〰️ Maybe (0)",
+        value: "—",
+        inline: true,
+      },
+      {
+        name: "👎 No (0)",
+        value: "—",
+        inline: true,
+      },
+    ],
+    footer: { text: `Roll Call ID: ${rollCallId}` },
+  };
+
+  const squadOptions = squads.map(s => ({
+    label: `${s.name} (${s.kind})`,
+    value: String(s.id),
+  }));
+  squadOptions.unshift({ label: "— No squad / unassigned —", value: "none" });
+
+  const components = [
+    {
+      type: 1,
+      components: [
+        {
+          type: 3,
+          custom_id: `squad_select:${rollCallId}`,
+          placeholder: "Select your squad (optional)",
+          options: squadOptions.slice(0, 25),
+          min_values: 1,
+          max_values: 1,
+        },
+      ],
+    },
+    {
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 3,
+          label: "✅ Yes",
+          custom_id: `attend:yes:${rollCallId}`,
+        },
+        {
+          type: 2,
+          style: 2,
+          label: "〰️ Maybe",
+          custom_id: `attend:maybe:${rollCallId}`,
+        },
+        {
+          type: 2,
+          style: 4,
+          label: "❌ No",
+          custom_id: `attend:no:${rollCallId}`,
+        },
+      ],
+    },
+  ];
+
+  // Build ping content
+  const pingContent = pingRoleIds && pingRoleIds.length > 0
+    ? pingRoleIds.map(id => `<@&${id}>`).join(" ") + "\n"
+    : "";
+
+  return { content: pingContent || undefined, embeds: [embed], components };
+}
 
 export async function POST(req: NextRequest) {
   let body: {
@@ -10,8 +127,6 @@ export async function POST(req: NextRequest) {
     title?: string;
     description?: string;
     opTimeUnix?: number;
-    pingRoleOverride?: string | null;
-    webhookId?: number;
   };
   try {
     body = await req.json();
@@ -19,47 +134,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { platoonId, title, description, opTimeUnix, pingRoleOverride, webhookId } = body;
+  const { platoonId, title, description, opTimeUnix } = body;
 
-  if (!platoonId || !title || !opTimeUnix || !webhookId) {
+  if (!platoonId || !title || !opTimeUnix) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-  }
-  if (typeof title !== "string" || title.length > 200) {
-    return NextResponse.json({ error: "Title too long" }, { status: 400 });
-  }
-  if (description !== undefined && (typeof description !== "string" || description.length > 1500)) {
-    return NextResponse.json({ error: "Description too long" }, { status: 400 });
   }
 
   const sb = supabaseAdmin();
 
-  const [whRes, pRes, sqRes] = await Promise.all([
-    sb.from("webhooks").select("*").eq("id", webhookId).single(),
+  // Get discord config
+  const { data: config } = await sb.from("discord_config").select("*").eq("id", 1).single();
+  if (!config?.channel_id) {
+    return NextResponse.json({ error: "Discord not configured. Set up Discord in Admin first." }, { status: 400 });
+  }
+
+  // Get platoon + squads
+  const [pRes, sqRes] = await Promise.all([
     sb.from("platoons").select("*").eq("id", platoonId).single(),
     sb.from("squads").select("*").eq("platoon_id", platoonId).order("sort_order"),
   ]);
 
-  if (whRes.error || !whRes.data) {
-    return NextResponse.json({ error: "Webhook not found" }, { status: 404 });
-  }
   if (pRes.error || !pRes.data) {
     return NextResponse.json({ error: "Platoon not found" }, { status: 404 });
   }
-  const webhook = whRes.data as Webhook;
-  const platoon = pRes.data;
-  if (webhook.platoon_id !== platoon.id) {
-    return NextResponse.json({ error: "Webhook/platoon mismatch" }, { status: 400 });
-  }
 
   const squads = (sqRes.data as Squad[]) ?? [];
-  const squadLines = squads.map((s) => `• ${s.name}  _(${s.kind})_`);
 
-  let pingRoleId = pingRoleOverride || platoon.ping_role_id || null;
-  if (pingRoleId !== null && !/^\d{5,25}$/.test(String(pingRoleId))) {
-    return NextResponse.json({ error: "Ping role must be a numeric Discord ID" }, { status: 400 });
-  }
-
-  // Save roll call to DB to get an ID for the RSVP page
+  // Save roll call to DB
   const { data: rollCallData, error: rollCallError } = await sb
     .from("roll_calls")
     .insert({
@@ -72,24 +173,32 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (rollCallError || !rollCallData) {
-    console.error("Failed to save roll call:", rollCallError);
     return NextResponse.json({ error: "Failed to save roll call" }, { status: 500 });
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const rsvpUrl = `${siteUrl}/rsvp/${rollCallData.id}`;
+  const pingRoleIds = config.ping_role_id
+    ? config.ping_role_id.split(",").filter(Boolean)
+    : [];
+
+  const message = buildRollCallMessage({
+    title,
+    description,
+    opTimeUnix,
+    rollCallId: rollCallData.id,
+    squads,
+    pingRoleIds,
+  });
 
   try {
-    await postRollCall(webhook.url, {
-      title,
-      description: description?.trim() || undefined,
-      opTimeUnix,
-      pingRoleId,
-      squadLines,
-      rsvpUrl,
-    });
+    const posted = await botRequest(`/channels/${config.channel_id}/messages`, "POST", message);
+
+    // Save message ID so we can edit it later
+    await sb.from("roll_calls").update({
+      discord_channel_id: config.channel_id,
+      discord_message_id: posted.id,
+    }).eq("id", rollCallData.id);
   } catch (err) {
-    console.error("postRollCall failed:", err);
+    console.error("Failed to post to Discord:", err);
     return NextResponse.json({ error: "Failed to post to Discord" }, { status: 502 });
   }
 

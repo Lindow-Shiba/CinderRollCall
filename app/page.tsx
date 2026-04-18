@@ -1,20 +1,17 @@
-import { supabaseAdmin, type Platoon, type Squad, type Webhook } from "@/lib/supabase";
+import { supabaseAdmin, type Platoon, type Squad } from "@/lib/supabase";
 import { RollCallForm } from "@/components/RollCallForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const sb = supabaseAdmin();
-  const [pRes, sRes, wRes] = await Promise.all([
+  const [pRes, sRes] = await Promise.all([
     sb.from("platoons").select("*").order("name"),
     sb.from("squads").select("*").order("sort_order"),
-    sb.from("webhooks").select("id,platoon_id,label,created_at").order("label"),
   ]);
 
   const platoons = (pRes.data as Platoon[]) ?? [];
   const squads = (sRes.data as Squad[]) ?? [];
-  // Intentionally omit the `url` field from what we ship to the client.
-  const webhooks = (wRes.data as Omit<Webhook, "url">[]) ?? [];
 
   return (
     <div>
@@ -30,7 +27,7 @@ export default async function HomePage() {
           </p>
         </div>
       ) : (
-        <RollCallForm platoons={platoons} squads={squads} webhooks={webhooks} />
+        <RollCallForm platoons={platoons} squads={squads} />
       )}
     </div>
   );

@@ -1,5 +1,6 @@
 import { getSession } from "@/lib/session";
 import { supabaseAdmin, type Platoon, type Squad, type Webhook } from "@/lib/supabase";
+import DiscordSetup from "@/components/DiscordSetup";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,13 @@ export default async function AdminPage({
         </div>
       )}
 
+
+      {/* ---------- Discord setup ---------- */}
+      <section className="bg-panel border border-border rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-semibold mb-1">Discord Setup</h2>
+        <p className="text-muted text-sm mb-4">Choose which server, channel and roles the bot uses for roll calls.</p>
+        <DiscordSetup />
+      </section>
       {/* ---------- Create platoon ---------- */}
       <section className="bg-panel border border-border rounded-lg p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4">New platoon</h2>
