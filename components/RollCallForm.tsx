@@ -13,14 +13,36 @@ const EDGE = "https://wvcuddamlhtigvyuqzay.supabase.co/functions/v1/discord-setu
 type Channel = { id: string; name: string };
 type Role = { id: string; name: string };
 
-function estToUnix(local: string): number | null {
+/**
+ * Convert a datetime-local value (entered as New York time) to a UNIX timestamp.
+ * Properly handles EST (UTC-5) and EDT (UTC-4) transitions.
+ */
+function newYorkToUnix(local: string): number | null {
   if (!local) return null;
-  const ms = new Date(local + ":00-05:00").getTime();
-  if (Number.isNaN(ms)) return null;
-  return Math.floor(ms / 1000);
+
+  // Parse input as UTC to use as a reference point
+  const inputAsUTC = new Date(local + 'Z');
+  if (isNaN(inputAsUTC.getTime())) return null;
+
+  // Find New York's UTC offset at this moment using Intl
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  });
+
+  const parts: Record<string, string> = {};
+  fmt.formatToParts(inputAsUTC).forEach(({ type, value }) => { parts[type] = value; });
+
+  const hr = parts.hour === '24' ? '00' : parts.hour;
+  const nyAsUTC = new Date(`${parts.year}-${parts.month}-${parts.day}T${hr}:${parts.minute}:${parts.second}Z`);
+  const offsetMs = inputAsUTC.getTime() - nyAsUTC.getTime();
+
+  return Math.floor((inputAsUTC.getTime() + offsetMs) / 1000);
 }
 
-function unixToEstPreview(unix: number): string {
+function unixToNYPreview(unix: number): string {
   return new Date(unix * 1000).toLocaleString("en-US", {
     timeZone: "America/New_York",
     weekday: "short",
@@ -52,11 +74,7 @@ const sectionLabel: React.CSSProperties = {
   gap: "8px",
 };
 
-const divider: React.CSSProperties = {
-  flex: 1,
-  height: "1px",
-  background: "#1e2938",
-};
+const divider: React.CSSProperties = { flex: 1, height: "1px", background: "#1e2938" };
 
 export function RollCallForm({ platoons, squads }: Props) {
   const [platoonId, setPlatoonId] = useState<number>(platoons[0]?.id ?? 0);
@@ -69,11 +87,11 @@ export function RollCallForm({ platoons, squads }: Props) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string>("");
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [selectedRole, setSelectedRole] = useState<string>("");
   const [discordLoading, setDiscordLoading] = useState(true);
 
   const platoonSquads = squads.filter((s) => s.platoon_id === platoonId);
-  const opUnix = estToUnix(opTime);
+  const opUnix = newYorkToUnix(opTime);
 
   useEffect(() => {
     async function loadDiscord() {
@@ -90,7 +108,7 @@ export function RollCallForm({ platoons, squads }: Props) {
         setChannels(chList);
         setRoles(roleList);
         if (config.channel_id) setSelectedChannel(config.channel_id);
-        if (config.ping_role_id) setSelectedRoles(config.ping_role_id.split(",").filter(Boolean));
+        if (config.ping_role_id) setSelectedRole(config.ping_role_id.split(",")[0] ?? "");
       } catch (e) {
         console.error(e);
       } finally {
@@ -100,21 +118,21 @@ export function RollCallForm({ platoons, squads }: Props) {
     loadDiscord();
   }, []);
 
-  function toggleRole(roleId: string) {
-    setSelectedRoles(prev => prev.includes(roleId) ? prev.filter(r => r !== roleId) : [...prev, roleId]);
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setResult(null);
-    if (!opUnix) { setResult({ ok: false, msg: "Pick an operation date/time (EST)." }); return; }
+    if (!opUnix) { setResult({ ok: false, msg: "Pick an operation date/time (New York time)." }); return; }
     if (!selectedChannel) { setResult({ ok: false, msg: "Select a Discord channel." }); return; }
     setSubmitting(true);
     try {
       const res = await fetch("/api/rollcall", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platoonId, title, description, opTimeUnix: opUnix, channelId: selectedChannel, pingRoleIds: selectedRoles }),
+        body: JSON.stringify({
+          platoonId, title, description, opTimeUnix: opUnix,
+          channelId: selectedChannel,
+          pingRoleIds: selectedRole ? [selectedRole] : [],
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -133,7 +151,6 @@ export function RollCallForm({ platoons, squads }: Props) {
     <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 300px" }}>
       <form onSubmit={submit} className="space-y-4">
 
-        {/* Op Details */}
         <div style={card}>
           <div style={sectionLabel}><span>Operation Details</span><span style={divider} /></div>
           <div className="space-y-4">
@@ -152,25 +169,24 @@ export function RollCallForm({ platoons, squads }: Props) {
               <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={1500} />
             </div>
             <div>
-              <label>Op Date & Time — EST</label>
+              <label>Op Date & Time — New York (ET)</label>
               <input type="datetime-local" value={opTime} onChange={(e) => setOpTime(e.target.value)} required />
               {opUnix && (
                 <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "4px" }}>
-                  🕐 {unixToEstPreview(opUnix)}
+                  🕐 {unixToNYPreview(opUnix)}
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Discord */}
         <div style={card}>
           <div style={sectionLabel}><span>Discord</span><span style={divider} /></div>
           <div className="space-y-4">
             <div>
               <label>Post to Channel</label>
               {discordLoading ? (
-                <div style={{ fontSize: "12px", color: "var(--muted)" }}>Loading channels…</div>
+                <div style={{ fontSize: "12px", color: "var(--muted)" }}>Loading…</div>
               ) : channels.length === 0 ? (
                 <div style={{ fontSize: "12px", color: "var(--accent)" }}>
                   No server configured. Set up Discord in <a href="/admin" style={{ textDecoration: "underline" }}>Admin</a>.
@@ -184,21 +200,16 @@ export function RollCallForm({ platoons, squads }: Props) {
             </div>
             {roles.length > 0 && (
               <div>
-                <label>Ping Roles (optional)</label>
-                <div style={{ border: "1px solid #1e2938", borderRadius: "6px", maxHeight: "140px", overflowY: "auto", padding: "8px" }}>
-                  {roles.map(r => (
-                    <label key={r.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 0", fontSize: "13px", cursor: "pointer", textTransform: "none", letterSpacing: "normal", color: "var(--text)" }}>
-                      <input type="checkbox" checked={selectedRoles.includes(r.id)} onChange={() => toggleRole(r.id)} style={{ accentColor: "var(--accent)", width: "14px", height: "14px" }} />
-                      {r.name}
-                    </label>
-                  ))}
-                </div>
+                <label>Ping Role (optional)</label>
+                <select value={selectedRole} onChange={e => setSelectedRole(e.target.value)}>
+                  <option value="">— No ping —</option>
+                  {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
               </div>
             )}
           </div>
         </div>
 
-        {/* Submit */}
         <div className="flex items-center gap-4">
           <button
             type="submit"
@@ -214,7 +225,6 @@ export function RollCallForm({ platoons, squads }: Props) {
               letterSpacing: "0.08em",
               textTransform: "uppercase",
               cursor: submitting ? "not-allowed" : "pointer",
-              transition: "background 0.15s",
             }}
           >
             {submitting ? "Posting…" : "Post Roll Call"}
@@ -227,7 +237,6 @@ export function RollCallForm({ platoons, squads }: Props) {
         </div>
       </form>
 
-      {/* Preview */}
       <div>
         <div style={{ ...card, position: "sticky", top: "20px" }}>
           <div style={sectionLabel}><span>Preview</span><span style={divider} /></div>
@@ -235,13 +244,13 @@ export function RollCallForm({ platoons, squads }: Props) {
             <div style={{ fontWeight: 700, fontSize: "15px", marginBottom: "4px" }}>{title || "(title)"}</div>
             {description && <div style={{ color: "var(--muted)", fontSize: "12px", whiteSpace: "pre-wrap", marginBottom: "8px" }}>{description}</div>}
             <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "8px" }}>
-              🗓️ {opUnix ? unixToEstPreview(opUnix) : "(pick a date/time)"}
+              🗓️ {opUnix ? unixToNYPreview(opUnix) : "(pick a date/time)"}
             </div>
             {platoonSquads.length > 0 && (
               <div>
                 <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted)", marginBottom: "6px" }}>SQUADS</div>
                 {platoonSquads.map(s => (
-                  <div key={s.id} style={{ fontSize: "12px", padding: "2px 0", color: "var(--text)" }}>
+                  <div key={s.id} style={{ fontSize: "12px", padding: "2px 0" }}>
                     • {s.name} <span style={{ color: "var(--muted)" }}>({s.kind})</span>
                   </div>
                 ))}

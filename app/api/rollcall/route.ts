@@ -51,7 +51,7 @@ function buildRollCallMessage(opts: {
     color: 0xC0392B,
     fields: [
       {
-        name: "🗓️ Op Time (EST)",
+        name: "🗓️ Op Time (ET)",
         value: `<t:${opTimeUnix}:F> (<t:${opTimeUnix}:R>)`,
         inline: false,
       },

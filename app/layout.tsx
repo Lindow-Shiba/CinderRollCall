@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </a>
               <nav className="flex items-center gap-1">
                 <a href="/" className="nav-link">POST</a>
+                <a href="/events" className="nav-link">EVENTS</a>
                 <a href="/admin" className="nav-link">ADMIN</a>
               </nav>
             </div>
