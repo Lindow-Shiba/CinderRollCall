@@ -16,7 +16,7 @@ async function botRequest(path: string, method: string, body?: unknown) {
   return res.status === 204 ? null : res.json();
 }
 
-export function buildRollCallMessage(opts: {
+function buildRollCallMessage(opts: {
   title: string;
   description?: string | null;
   opTimeUnix: number;
