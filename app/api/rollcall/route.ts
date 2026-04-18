@@ -16,10 +16,11 @@ async function botRequest(path: string, method: string, body?: unknown) {
   return res.status === 204 ? null : res.json();
 }
 
-function attendanceEmoji(attendance: string) {
-  if (attendance === "yes") return "👍";
-  if (attendance === "maybe") return "〰️";
-  return "👎";
+function emojiToButton(emoji: string) {
+  // Custom server emoji format: <:name:id>
+  const match = emoji.match(/^<:([^:]+):(\d+)>$/);
+  if (match) return { id: match[2], name: match[1] };
+  return undefined; // standard unicode emoji — passed as label text
 }
 
 function buildRollCallMessage(opts: {
@@ -30,14 +31,19 @@ function buildRollCallMessage(opts: {
   squads: Squad[];
   rsvps?: { display_name: string; squad_id: number | null; attendance: string }[];
   pingRoleIds?: string[];
+  emojiYes: string;
+  emojiMaybe: string;
+  emojiNo: string;
 }) {
-  const { title, description, opTimeUnix, rollCallId, squads, rsvps = [], pingRoleIds } = opts;
+  const { title, description, opTimeUnix, rollCallId, squads, rsvps = [], pingRoleIds, emojiYes, emojiMaybe, emojiNo } = opts;
 
-  // One field per squad showing members with emoji
   const squadFields = squads.map(s => {
     const members = rsvps
       .filter(r => r.squad_id === s.id)
-      .map(r => `${attendanceEmoji(r.attendance)} ${r.display_name}`);
+      .map(r => {
+        const emoji = r.attendance === "yes" ? emojiYes : r.attendance === "maybe" ? emojiMaybe : emojiNo;
+        return `${emoji} ${r.display_name}`;
+      });
     return {
       name: `${s.name} (${members.length})`,
       value: members.length > 0 ? members.join("\n") : "—",
@@ -50,43 +56,46 @@ function buildRollCallMessage(opts: {
     description: description ?? undefined,
     color: 0xC0392B,
     fields: [
-      {
-        name: "🗓️ Op Time (ET)",
-        value: `<t:${opTimeUnix}:F> (<t:${opTimeUnix}:R>)`,
-        inline: false,
-      },
+      { name: "🗓️ Op Time (ET)", value: `<t:${opTimeUnix}:F> (<t:${opTimeUnix}:R>)`, inline: false },
       ...squadFields,
     ],
     footer: { text: `Roll Call ID: ${rollCallId}` },
   };
 
-  // Squad dropdown (no absent option)
   const squadOptions = squads.map(s => ({
     label: s.name,
     description: s.kind.charAt(0).toUpperCase() + s.kind.slice(1),
     value: String(s.id),
   }));
 
+  // Build buttons with emoji
+  function makeButton(style: number, label: string, customId: string, emojiStr: string) {
+    const btn: any = { type: 2, style, label, custom_id: customId };
+    const custom = emojiToButton(emojiStr);
+    if (custom) {
+      btn.emoji = custom;
+    }
+    return btn;
+  }
+
   const components = [
     {
       type: 1,
-      components: [
-        {
-          type: 3,
-          custom_id: `squad_select:${rollCallId}`,
-          placeholder: "1. Select your squad / team / reserve",
-          options: squadOptions.slice(0, 25),
-          min_values: 1,
-          max_values: 1,
-        },
-      ],
+      components: [{
+        type: 3,
+        custom_id: `squad_select:${rollCallId}`,
+        placeholder: "1. Select your squad / team / reserve",
+        options: squadOptions.slice(0, 25),
+        min_values: 1,
+        max_values: 1,
+      }],
     },
     {
       type: 1,
       components: [
-        { type: 2, style: 3, label: "👍 Yes", custom_id: `attend:yes:${rollCallId}` },
-        { type: 2, style: 2, label: "〰️ Maybe", custom_id: `attend:maybe:${rollCallId}` },
-        { type: 2, style: 4, label: "👎 No", custom_id: `attend:no:${rollCallId}` },
+        makeButton(3, `${emojiYes.startsWith("<:") ? "" : emojiYes + " "}Yes`, `attend:yes:${rollCallId}`, emojiYes),
+        makeButton(2, `${emojiMaybe.startsWith("<:") ? "" : emojiMaybe + " "}Maybe`, `attend:maybe:${rollCallId}`, emojiMaybe),
+        makeButton(4, `${emojiNo.startsWith("<:") ? "" : emojiNo + " "}No`, `attend:no:${rollCallId}`, emojiNo),
       ],
     },
   ];
@@ -116,13 +125,17 @@ export async function POST(req: NextRequest) {
   }
 
   const sb = supabaseAdmin();
-  const [pRes, sqRes] = await Promise.all([
+  const [pRes, sqRes, configRes] = await Promise.all([
     sb.from("platoons").select("*").eq("id", platoonId).single(),
     sb.from("squads").select("*").eq("platoon_id", platoonId).order("sort_order"),
+    sb.from("discord_config").select("emoji_yes,emoji_maybe,emoji_no").eq("id", 1).single(),
   ]);
 
   if (pRes.error || !pRes.data) return NextResponse.json({ error: "Platoon not found" }, { status: 404 });
   const squads = (sqRes.data as Squad[]) ?? [];
+  const emojiYes = configRes.data?.emoji_yes ?? "👍";
+  const emojiMaybe = configRes.data?.emoji_maybe ?? "〰️";
+  const emojiNo = configRes.data?.emoji_no ?? "👎";
 
   const { data: rollCallData, error: rcErr } = await sb
     .from("roll_calls")
@@ -132,7 +145,9 @@ export async function POST(req: NextRequest) {
   if (rcErr || !rollCallData) return NextResponse.json({ error: "Failed to save roll call" }, { status: 500 });
 
   const message = buildRollCallMessage({
-    title, description, opTimeUnix, rollCallId: rollCallData.id, squads, pingRoleIds: pingRoleIds ?? [],
+    title, description, opTimeUnix, rollCallId: rollCallData.id,
+    squads, pingRoleIds: pingRoleIds ?? [],
+    emojiYes, emojiMaybe, emojiNo,
   });
 
   try {
