@@ -1,6 +1,7 @@
 import { getSession } from "@/lib/session";
 import { supabaseAdmin, type Platoon, type Squad } from "@/lib/supabase";
 import DiscordSetup from "@/components/DiscordSetup";
+import { SortableSquadList } from "@/components/SortableSquadList";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -182,31 +183,10 @@ export default async function AdminPage({
               </button>
             </form>
 
-            {/* Squad list grouped by kind */}
-            {(["squad", "team", "reserve"] as const).map(kind => {
-              const list = byKind[kind];
-              if (list.length === 0) return null;
-              return (
-                <div key={kind} style={{ marginBottom: "12px" }}>
-                  <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em", color: "var(--muted)", textTransform: "uppercase", marginBottom: "6px" }}>
-                    {kind === "squad" ? "Squads" : kind === "team" ? "Teams" : "Reserves"}
-                  </div>
-                  {list.map(s => (
-                    <div key={s.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 0", borderBottom: "1px solid #1e2938" }}>
-                      <span style={{ width: "32px", fontSize: "11px", color: "var(--muted)", fontFamily: "monospace" }}>{s.sort_order}</span>
-                      <span style={{ flex: 1, fontSize: "13px" }}>{s.name}</span>
-                      <form method="POST" action="/api/admin/actions">
-                        <input type="hidden" name="action" value="squad.delete" />
-                        <input type="hidden" name="id" value={s.id} />
-                        <button type="submit" style={{ fontSize: "11px", color: "var(--muted)", background: "none", border: "none", cursor: "pointer" }}>
-                          Remove
-                        </button>
-                      </form>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
+            {/* Sortable squad list */}
+            {pSquads.length > 0 && (
+              <SortableSquadList platoonId={p.id} squads={pSquads} />
+            )}
 
             {/* Add squad/team/reserve */}
             <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #1e2938" }}>
